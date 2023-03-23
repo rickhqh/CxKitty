@@ -225,6 +225,7 @@ class ChapterExam:
         self.logger.debug(f"开始填充题目 {log_suffix}")
         # 遍历多个搜索器返回以适配结果
         for result in search_results:
+            self.logger.warning(f"rick |result.answer| {result.answer}")
             if result.code != 0 or result.answer is None:
                 continue
             search_answer = result.answer.strip()
@@ -235,6 +236,12 @@ class ChapterExam:
                             question.answer = k
                             self.logger.debug(f"单选题命中 {k}={v} {log_suffix}")
                             return True
+                        elif difflib.SequenceMatcher(a=k, b=search_answer).ratio() >= 0.9:
+                            # 可能选项命中
+                            question.answer = k
+                            self.logger.debug(f"单选题命中 {k}={v} {log_suffix}")
+                            return True
+
                 case QuestionType.判断题:
                     if re.search(r"(错|否|错误|false|×)", search_answer):
                         question.answer = "false"
@@ -245,12 +252,18 @@ class ChapterExam:
                         self.logger.debug(f"判断题命中 false {log_suffix}")
                         return True
                 case QuestionType.多选题:
+                    self.logger.warning(f"rick |search_answer| {search_answer}")
                     option_lst = []
                     if len(part_answer_lst := search_answer.split("#")) <= 1:
-                        part_answer_lst = search_answer.split(";")
+                        part_answer_lst = search_answer.split("\n")#Enncy 题库使用的是\n
+                    self.logger.warning(f"rick |part_answer_lst| {part_answer_lst}")
                     for part_answer in part_answer_lst:
                         for k, v in question.answers.items():
                             if difflib.SequenceMatcher(a=v, b=part_answer).ratio() >= 0.9:
+                                option_lst.append(k)
+                                self.logger.debug(f"多选题命中 {k}={v} {log_suffix}")
+                            if difflib.SequenceMatcher(a=k, b=part_answer).ratio() >= 0.9:
+                                #可能选项命中
                                 option_lst.append(k)
                                 self.logger.debug(f"多选题命中 {k}={v} {log_suffix}")
                     # 多选题选项必须排序，否则提交错误
@@ -261,11 +274,17 @@ class ChapterExam:
                         return True
         match question.q_type:
             case QuestionType.单选题:
-                self.logger.warning(f"单选题填充失败 {log_suffix}")
+                self.logger.warning(f"单选题填充失败 但随机提交了 {log_suffix}")
+                question.answer = "A"
+                return True
             case QuestionType.判断题:
-                self.logger.warning(f"判断题填充失败 {log_suffix}")
+                self.logger.warning(f"判断题填充失败 但随机提交了 {log_suffix}")
+                question.answer = "true"
+                return True
             case QuestionType.多选题:
-                self.logger.warning(f"多选题填充失败 {log_suffix}")
+                self.logger.warning(f"多选题填充失败 但随机提交了 {log_suffix}")
+                question.answer = "A"
+                return True
             case _:
                 self.logger.warning(
                     f"未实现的题目类型 {question.q_type.name}/{question.q_type.value} {log_suffix}"
@@ -300,6 +319,9 @@ class ChapterExam:
             )
             # 填充选项
             status = self.__fill_answer(question, results)
+            if not status:
+                self.logger.warning(f"rick 重试一次")
+                status = self.__fill_answer(question, results)
             tb.add_row(
                 str(question.q_id),
                 question.q_type.name,
@@ -358,7 +380,14 @@ class ChapterExam:
                 )
                 + "\n--------------------"
             )
-            # TODO: 答题失败提交保存
+            save_result = self.__save()
+            j = JSON.from_data(save_result, ensure_ascii=False)
+            if save_result["status"] == True:
+                self.logger.info(f"试题保存成功 " f"[{self.title}(J.{self.jobid}/W.{self.workid})]")
+                msg.update(Panel(j, title="保存成功 TAT！", border_style="green"))
+            else:
+                self.logger.warning(f"保存提交失败 " f"[{self.title}(J.{self.jobid}/W.{self.workid})]")
+                msg.update(Panel(j, title="保存失败！", border_style="red"))
         time.sleep(5.0)
 
     def __mk_answer_reqdata(self) -> dict[str, str]:
@@ -389,6 +418,49 @@ class ChapterExam:
             },
             data={
                 "pyFlag": "",
+                "courseId": self.courseid,
+                "classId": self.clazzid,
+                "api": 1,
+                "mooc": 0,
+                "workAnswerId": self.workAnswerId,
+                "totalQuestionNum": self.totalQuestionNum,
+                "fullScore": self.fullScore,
+                "knowledgeid": self.knowledgeid,
+                "oldSchoolId": "",
+                "oldWorkId": self.workid,
+                "jobid": self.jobid,
+                "workRelationId": self.workRelationId,
+                "enc_work": self.enc_work,
+                "isphone": "true",
+                "userId": self.acc.puid,
+                "workTimesEnc": "",
+                **answer_data,
+            },
+        )
+        resp.raise_for_status()
+        json_content = resp.json()
+        self.logger.debug(f"试题提交 resp: {json_content}")
+        return json_content
+
+    def __save(self) -> dict:
+        "保存答题信息"
+        answer_data = self.__mk_answer_reqdata()
+        self.logger.debug(f"试题保存 payload: {answer_data}")
+        resp = self.session.post(
+            API_EXAM_COMMIT,
+            params={
+                "_classId": self.clazzid,
+                "courseid": self.courseid,
+                "token": self.enc_work,
+                "workAnswerId": self.workAnswerId,
+                "ua": "app",
+                "formType2": "post",
+                "saveStatus": 1,
+                "version": 1,
+                "tempsave": 1
+            },
+            data={
+                "pyFlag": "1",
                 "courseId": self.courseid,
                 "classId": self.clazzid,
                 "api": 1,

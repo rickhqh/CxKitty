@@ -15,7 +15,9 @@
 <span style="color: red"><b>Ps: 本项目不提供任何题库资源，有相关测试需求者请按照文档自行解决。本项目仅供学习参考使用，请在下载部署后24小时内删除，由于使用本项目不当所造成的挂科或不良学习记录作者一概不负责。</b></span>
 
 效果演示视频 https://www.bilibili.com/video/BV1yt4y1P7NF
-
+## ✨Rick
+- ✅随机答题，适合必须答完题才能解锁下一章的课程
+- ✅修改了一点内容，Enncy题库更新了，并且他可能返回选项abcd
 ## ✨Features
 
 ### Supports
